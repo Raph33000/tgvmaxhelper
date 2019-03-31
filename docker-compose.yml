@@ -13,7 +13,7 @@ services:
   web:
     build: build/nginx
     ports:
-        - '81:80'
+        - '80:80'
     links:
         - php
         - db
