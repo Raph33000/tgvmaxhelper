@@ -50,6 +50,14 @@ class User extends BaseUser
     protected $surname;
 
     /**
+     * @var string
+     *
+     * @ORM\Column(name="token", nullable=false)
+     * @Assert\NotBlank(groups={"Registration", "Profile"})
+     */
+    protected $token;
+
+    /**
      * @var date
      *
      * @ORM\Column(name="birthdate", nullable=false, type="date")
@@ -171,10 +179,10 @@ class User extends BaseUser
     public function getAge()
     {
         $from = new \DateTime($this->getBirthdate()->format('Y-m-d H:i:s'));
-        $to   = new \DateTime('today');
+        $to = new \DateTime('today');
+
         return $from->diff($to)->y;
     }
-
 
 
     /**
@@ -223,5 +231,21 @@ class User extends BaseUser
         $this->UserCard = $userCard;
 
         return $this;
+    }
+
+    /**
+     * @return null|string
+     */
+    public function getToken(): ?string
+    {
+        return $this->token;
+    }
+
+    /**
+     * @param string $token
+     */
+    public function setToken(string $token)
+    {
+        $this->token = $token;
     }
 }

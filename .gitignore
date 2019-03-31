@@ -26,3 +26,4 @@ web/js/*
 web/css/*
 composer-setup.php
 composer.phar
+.env

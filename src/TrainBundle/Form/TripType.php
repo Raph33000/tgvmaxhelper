@@ -61,12 +61,12 @@ class TripType extends AbstractType
             ->add('from_departure_date', DateTimeType::class, array(
                 'format' => 'yyyy-MM-dd HH:mm:ss',
                 'widget' => 'single_text',
-                'attr' => array('class' => "datetimepicker"),
+                'attr' => array('class' => "datetimepicker", 'autocomplete' => 'disabled'),
                 'html5' => false))
             ->add('to_departure_date', DateTimeType::class, array(
                 'format' => 'yyyy-MM-dd HH:mm:ss',
                 'widget' => 'single_text',
-                'attr' => array('class' => "datetimepicker"),
+                'attr' => array('class' => "datetimepicker", 'autocomplete' => 'disabled'),
                 'html5' => false))
             ->add('booking', CheckboxType::class, array(
                 'label' => 'Auto reservation ?',

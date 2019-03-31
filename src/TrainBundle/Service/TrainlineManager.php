@@ -6,7 +6,7 @@ use Doctrine\ORM\EntityManager;
 use Psr\Log\LoggerInterface;
 use TrainBundle\Entity\OrderTrip;
 use TrainBundle\Entity\Trip;
-use TrainBundle\Entity\UserCard;
+use TrainBundle\Entity\User;
 
 class TrainlineManager
 {
@@ -20,6 +20,40 @@ class TrainlineManager
         $this->templating = $templating;
         $this->em = $em;
         $this->logger = $logger;
+    }
+
+    /**
+     * @param GuzzleHttp\Client $client
+     * @param User $user
+     * @return array|null
+     */
+    private function retreiveTrainlineIds(GuzzleHttp\Client $client, User $user)
+    {
+        try {
+            $response = $client->get($this::API_URL.'/user', [
+                'headers' => [
+                    'User-Agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.121 Safari/537.36',
+                    'x-user-agent' => 'CaptainTrain/1553708877(web) (Ember 3.4.6)',
+                    'origin' => 'chrome-extension://fhbjgbiflinjbdggehcddcbncdddomop',
+                    'authorization' => 'Token token="' . $user->getToken() . '"',
+                    'accept' => '*/*',
+                ]
+            ]);
+        }
+        catch (\Exception $e) {
+            $this->LogSystem("alert", '[CRON] :: Error during retrieval user data', $e->getMessage(), $this::API_URL.'/user', "");
+
+            return null;
+        }
+
+        $trainlineUser = json_decode($response->getBody()->getContents(), true);
+        if (!isset($trainlineUser['passengers'][0]['id']) || !isset($trainlineUser['passengers'][0]['card_ids'][0])) {
+            $this->LogSystem("alert", '[CRON] :: Error during retrieval user data', "Le token n'est pas valide", $this::API_URL.'/user', "");
+
+            return null;
+        }
+        $userData = ['trainlineUid' => $trainlineUser['passengers'][0]['id'], 'trainlineCid' => $trainlineUser['passengers'][0]['card_ids'][0]];
+        return $userData;
     }
 
     /**
@@ -54,26 +88,27 @@ class TrainlineManager
             $this->em->persist($trip);
         }
 
-        /**
-         * Retrieve TGV Max card from User
-         * Create passenger from User
-         */
-        $card = $this->em->getRepository(UserCard::class)->findOneByUser($trip->getUser());
-        $passenger = array(array("id" => $passengerId, "label" => $this->getTypeByAge($trip->getUser()->getAge()), "age" => $trip->getUser()->getAge(), "cards" => array(array("reference" => $card->getDiscountCard()->getReference(), "number" => $card->getDiscountCardNumber())), "cui" => null));
+        $client = new GuzzleHttp\Client();
+        $userData = $this->retreiveTrainlineIds($client, $trip->getUser());
+        if (!$userData) {
+            return;
+        }
 
         /**
          * Get All Train available from DepartureDate to DepartureDate
          * Create Payload with all information
          * Send request, catch error and store in DB for User and in Logger for Admin
          */
-        $payload = array("search" => array("departure_date" => $trip->getFromDepartureDate()->format('Y-m-d\TH:i:sP'),"return_date" => null,"passengers" => $passenger,"systems" => array("sncf","db","busbud","idtgv","ouigo","trenitalia","ntv","hkx","renfe","benerail","ocebo","westbahn","locomore","flixbus","timetable"),"exchangeable_part" => null,"departure_station_id" => $trip->getDepartureStationId()->getId(),"via_station_id"=>null,"arrival_station_id" => $trip->getArrivalStationId()->getId(),"exchangeable_pnr_id"=>null));
-        $client = new GuzzleHttp\Client();
+        $payload = array("search" => array("departure_date" => $trip->getFromDepartureDate()->format('Y-m-d\TH:i:sP'),"return_date" => null,"passenger_ids" => [$userData['trainlineUid']], "card_ids" => [$userData['trainlineCid']], "systems" => array("sncf","db","busbud","idtgv","ouigo","trenitalia","ntv","hkx","renfe","benerail","ocebo","westbahn","locomore","flixbus","timetable"),"exchangeable_part" => null,"departure_station_id" => $trip->getDepartureStationId()->getId(),"via_station_id"=>null,"arrival_station_id" => $trip->getArrivalStationId()->getId(),"exchangeable_pnr_id"=>null));
         try {
             $response = $client->post($this::API_URL.'/search', [
                 'headers' => [
-                    'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36',
-                    'x-user-agent' => 'CaptainTrain/1509467302(web) (Ember 2.12.2)'
-                ],
+                    'User-Agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.121 Safari/537.36',
+                    'x-user-agent' => 'CaptainTrain/1553708877(web) (Ember 3.4.6)',
+                    'origin' => 'chrome-extension://fhbjgbiflinjbdggehcddcbncdddomop',
+                    'authorization' => 'Token token="' . $trip->getUser()->getToken() . '"',
+                    'accept' => '*/*',
+            ],
                 'json' => $payload
             ]);
         }
@@ -107,6 +142,9 @@ class TrainlineManager
             if (!($train['departure_date'] >= $trip->getFromDepartureDate()->format('Y-m-d\TH:i:sP') AND $train['departure_date'] <= $trip->getToDepartureDate()->format('Y-m-d\TH:i:sP'))) {
                 continue;
             }
+            if ($train['cents']) {
+                continue;
+            }
             $trainCompatibleWithTheSearch[] = $train;
         }
 
@@ -119,13 +157,16 @@ class TrainlineManager
              * Create Payload with all information
              * Send request, catch error and store in DB for User and in Logger for Admin
              */
-            $payload = array("search" => array("departure_date" => $trip->getToDepartureDate()->format('Y-m-d\TH:i:sP'),"return_date" => null,"passengers" => $passenger,"systems" => array("sncf","db","busbud","idtgv","ouigo","trenitalia","ntv","hkx","renfe","benerail","ocebo","westbahn","locomore","flixbus","timetable"),"exchangeable_part" => null,"departure_station_id" => $trip->getDepartureStationId()->getId(),"via_station_id"=>null,"arrival_station_id" => $trip->getArrivalStationId()->getId(),"exchangeable_pnr_id"=>null));
+            $payload = array("search" => array("departure_date" => $trip->getToDepartureDate()->format('Y-m-d\TH:i:sP'),"return_date" => null,"passenger_ids" => [$userData['trainlineUid']], "card_ids" => [$userData['trainlineCid']],"systems" => array("sncf","db","busbud","idtgv","ouigo","trenitalia","ntv","hkx","renfe","benerail","ocebo","westbahn","locomore","flixbus","timetable"),"exchangeable_part" => null,"departure_station_id" => $trip->getDepartureStationId()->getId(),"via_station_id"=>null,"arrival_station_id" => $trip->getArrivalStationId()->getId(),"exchangeable_pnr_id"=>null));
             $client = new GuzzleHttp\Client();
             try {
                 $response = $client->post($this::API_URL.'/search', [
                     'headers' => [
                         'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36',
-                        'x-user-agent' => 'CaptainTrain/1509467302(web) (Ember 2.12.2)'
+                        'x-user-agent' => 'CaptainTrain/1509467302(web) (Ember 2.12.2)',
+                        'origin' => 'chrome-extension://fhbjgbiflinjbdggehcddcbncdddomop',
+                        'authorization' => 'Token token="' . $trip->getUser()->getToken() . '"',
+                        'accept' => '*/*'
                     ],
                     'json' => $payload
                 ]);
@@ -198,10 +239,14 @@ class TrainlineManager
                  * Search information on the train
                  */
                 try {
+
                     $response = $client->get($this::API_URL.'/search/'.$train['folder']['search_id'].'/folders/'.$train['folder']['id'].'?direction='.$train['folder']['direction'], [
                         'headers' => [
                             'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36',
-                            'x-user-agent' => 'CaptainTrain/1509467302(web) (Ember 2.12.2)'
+                            'x-user-agent' => 'CaptainTrain/1509467302(web) (Ember 2.12.2)',
+                            'origin' => 'chrome-extension://fhbjgbiflinjbdggehcddcbncdddomop',
+                            'authorization' => 'Token token="' . $trip->getUser()->getToken() . '"',
+                            'accept' => '*/*'
                         ]
                     ]);
                 }
@@ -228,16 +273,22 @@ class TrainlineManager
                  * Create the payload
                  * Send request, catch error and store in DB for User and in Logger for Admin
                  */
-                $payload = array("book" => array("search_id" => $train['folder']['search_id'],"outward_folder_id" => $train['folder']['id'],"options" => array("d81a54eeb66b11e780f16f5e2f5eaac7" => array("comfort_class" => "sncf.regular","seat" => "no_preference")),"passengers" => [array("id" => $train['trips'][0]['passenger_id'],"gender" => ($trip->getUser()->getGender() == "M.") ? "male" : "female","first_name" => $trip->getUser()->getName(),"last_name" => $trip->getUser()->getSurname(),"birthdate" => $trip->getUser()->getBirthdate()->format('Y-m-d\TH:i:sP'),"address_id" => null,"user_id" => null,"original_id" => null)],"user" => array("first_name" => $trip->getUser()->getName(),"last_name" => $trip->getUser()->getSurname(),"profile_picture_url" => null,"email" => $trip->getUser()->getEmail(),"password" => null,"current_password" => null,"is_confirmed" => false,"wants_cart_expiration_reminder" => false,"wants_newsletter" => false,"wants_ics" => false,"wants_passbook" => false,"wants_proof_of_travel" => false,"ask_for_ics_and_passbook_preferences" => false,"needs_verification" => false,"locale" => null,"preferred_currency" => null,"calendar_public_url" => null,"source" => null,"correlation_key" => null,"godparent_token" => null,"signup_referral" => null,"third_party_id" => null,"flexibility_filter" => null,"comfort_filter" => null,"concur_auth_code" => null,"is_concur" => false,"pro_token" => null,"gender" => "male","birthdate" => null,"auth_token" => null,"suggested_station_ids" => array(),"identification_document_ids" => array(),"address_id" => null,"organization_id" => null,"preferred_supervisor_id" => null,"supervisor_ids" => array())));
+                $payload = array("book" => array("search_id" => strval($train['folder']['search_id']),"outward_folder_id" => $train['folder']['id'],"options" => array($train['segments'][0]['id'] => array("comfort_class" => "pao.default","seat" => "window"))));
                 try {
-                    $response = $client->post($this::API_URL.'/book', [
+                    $response = $client->post($this::API_URL . '/book', [
                         'headers' => [
-                            'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36',
-                            'x-user-agent' => 'CaptainTrain/1509467302(web) (Ember 2.12.2)'
+                            'User-Agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.121 Safari/537.36',
+                            'x-user-agent' => 'CaptainTrain/1509467302(web) (Ember 2.12.2)',
+                            'origin' => 'chrome-extension://fhbjgbiflinjbdggehcddcbncdddomop',
+                            'accept' => '*/*',
+                            'authorization' => 'Token token="' . $trip->getUser()->getToken() . '"',
+                            'accept-language'=> 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+                            'accept-encoding' => 'gzip, deflate, br',
+                            'postman-token' => '2342976f-086c-9629-f112-f3bbd52d372e',
+                            'cache-control' => 'no-cache',
                         ],
                         'json' => $payload
-                    ]);
-                }
+                    ]);                }
                 catch (\Exception $e) {
                     $this->LogSystem("alert", '[CRON] :: Error during create option on the train', $e->getMessage(), $this::API_URL.'/book', $payload);
 
@@ -268,7 +319,10 @@ class TrainlineManager
                         $response = $client->post($this::API_URL.'/payments', [
                             'headers' => [
                                 'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36',
-                                'x-user-agent' => 'CaptainTrain/1509467302(web) (Ember 2.12.2)'
+                                'x-user-agent' => 'CaptainTrain/1509467302(web) (Ember 2.12.2)',
+                                'origin' => 'chrome-extension://fhbjgbiflinjbdggehcddcbncdddomop',
+                                'accept' => '*/*',
+                                'authorization' => 'Token token="' . $trip->getUser()->getToken() . '"'
                             ],
                             'json' => $payload
                         ]);
@@ -307,7 +361,10 @@ class TrainlineManager
                             $response = $client->post($this::API_URL.'/payments/'.$resultBookingPayment['payment']['id'].'/confirm', [
                                 'headers' => [
                                     'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36',
-                                    'x-user-agent' => 'CaptainTrain/1509467302(web) (Ember 2.12.2)'
+                                    'x-user-agent' => 'CaptainTrain/1509467302(web) (Ember 2.12.2)',
+                                    'origin' => 'chrome-extension://fhbjgbiflinjbdggehcddcbncdddomop',
+                                    'accept' => '*/*',
+                                    'authorization' => 'Token token="' . $trip->getUser()->getToken() . '"'
                                 ],
                                 'json' => $payload
                             ]);
@@ -370,7 +427,10 @@ class TrainlineManager
         $client->delete($this::API_URL.'/orders/'.$orderId, [
             'headers' => [
                 'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36',
-                'x-user-agent' => 'CaptainTrain/1509467302(web) (Ember 2.12.2)'
+                'x-user-agent' => 'CaptainTrain/1509467302(web) (Ember 2.12.2)',
+                'origin' => 'chrome-extension://fhbjgbiflinjbdggehcddcbncdddomop',
+                'accept' => '*/*',
+                'authorization' => 'Token token=""',
             ],
         ]);
         return;
@@ -393,7 +453,10 @@ class TrainlineManager
             $response = $client->post($this::API_URL.'/orders/'.$order->getOrderId().'/cancellations', [
                 'headers' => [
                     'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36',
-                    'x-user-agent' => 'CaptainTrain/1509467302(web) (Ember 2.12.2)'
+                    'x-user-agent' => 'CaptainTrain/1509467302(web) (Ember 2.12.2)',
+                    'origin' => 'chrome-extension://fhbjgbiflinjbdggehcddcbncdddomop',
+                    'accept' => '*/*',
+                    'authorization' => 'Token token="' . $order->getUser()->getToken() . '"',
                 ],
                 'json' => $payload
             ]);
@@ -413,7 +476,11 @@ class TrainlineManager
             $response = $client->put($this::API_URL.'/orders/'.$order->getOrderId().'/cancellations/'.$cancellation['id'], [
                 'headers' => [
                     'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36',
-                    'x-user-agent' => 'CaptainTrain/1509467302(web) (Ember 2.12.2)'
+                    'x-user-agent' => 'CaptainTrain/1509467302(web) (Ember 2.12.2)',
+                    'origin' => 'chrome-extension://fhbjgbiflinjbdggehcddcbncdddomop',
+                    'accept' => '*/*',
+                    'authorization' => 'Token token="' . $order->getUser()->getToken() . '"',
+
                 ],
                 'json' => $payload
             ]);

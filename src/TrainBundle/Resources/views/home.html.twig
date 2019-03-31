@@ -5,8 +5,8 @@
 {% block content %}
 
     {% for trip in trips|reverse %}
-        <div class="card {% if trip.toDepartureDate.date|date("d/m/Y H:i") < "now"|date("d/m/Y H:i") %} finished {% endif %}">
-            <div class="card-body {% if trip.toDepartureDate.date|date("d/m/Y H:i") < "now"|date("d/m/Y H:i") %} progress-bar progress-bar-striped progress-bar-striped {% endif %}">
+        <div class="card {% if trip.toDepartureDate.date|date("U") < date()|date("U") %} finished {% endif %}">
+            <div class="card-body {% if trip.toDepartureDate.date|date("U") < date()|date("U") %} progress-bar progress-bar-striped progress-bar-striped {% endif %}">
                 <h5 class="card-title">Voyage de {{ trip.departureStationId.name }} à {{ trip.arrivalStationId.name }}</h5>
                 <h6 class="card-subtitle mb-2 text-muted">
                         Train au départ:
@@ -27,7 +27,7 @@
                         <span class="badge badge-info">En recherche</span> <span class="badge badge-danger">Erreur sur la dernière recherche</span>
                     {% elseif trip.IsNotified %}
                         <span class="badge badge-info">Vous avez été notifié des trajets disponibles</span>
-                    {% elseif trip.toDepartureDate.date|date("d/m/Y H:i") < date('+30days', 'Europe/Paris') and trip.toDepartureDate.date|date("d/m/Y H:i") > "now"|date("d/m/Y H:i") %}
+                    {% elseif trip.toDepartureDate.date|date("d/m/Y H:i") < date('+30days', 'Europe/Paris') and trip.toDepartureDate.date|date("U") > date()|date("U") %}
                         <span class="badge badge-info">En recherche</span>
                     {% else %}
                         <span class="badge badge-warning">Terminée sans réservation valable</span>
