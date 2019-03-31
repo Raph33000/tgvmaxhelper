@@ -27,3 +27,5 @@ web/css/*
 composer-setup.php
 composer.phar
 .env
+logs/*
+mysql/*
