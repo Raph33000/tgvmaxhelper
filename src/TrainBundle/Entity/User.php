@@ -52,10 +52,18 @@ class User extends BaseUser
     /**
      * @var string
      *
-     * @ORM\Column(name="token", nullable=false)
+     * @ORM\Column(name="token", nullable=true)
      * @Assert\NotBlank(groups={"Registration", "Profile"})
      */
     protected $token;
+
+    /**
+     * @var string
+     *
+     * @ORM\Column(name="trainline_password", nullable=false)
+     * @Assert\NotBlank(groups={"Registration", "Profile"})
+     */
+    protected $trainlinePassword;
 
     /**
      * @var date
@@ -247,5 +255,21 @@ class User extends BaseUser
     public function setToken(string $token)
     {
         $this->token = $token;
+    }
+
+    /**
+     * @return string|null
+     */
+    public function getTrainlinePassword(): ?string
+    {
+        return $this->trainlinePassword;
+    }
+
+    /**
+     * @param string $trainlinePassword
+     */
+    public function setTrainlinePassword(string $trainlinePassword)
+    {
+        $this->trainlinePassword = $trainlinePassword;
     }
 }

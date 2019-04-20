@@ -30,6 +30,9 @@ class TrainlineManager
     private function retreiveTrainlineIds(GuzzleHttp\Client $client, User $user)
     {
         try {
+            if (!$user->getToken()) {
+                throw new \Exception();
+            }
             $response = $client->get($this::API_URL.'/user', [
                 'headers' => [
                     'User-Agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.121 Safari/537.36',
@@ -39,14 +42,37 @@ class TrainlineManager
                     'accept' => '*/*',
                 ]
             ]);
+            $trainlineUser = json_decode($response->getBody()->getContents(), true);
         }
         catch (\Exception $e) {
-            $this->LogSystem("alert", '[CRON] :: Error during retrieval user data', $e->getMessage(), $this::API_URL.'/user', "");
 
-            return null;
+            $payload = [
+                'id' => 1,
+                'email' => $user->getEmail(),
+                'password' => $user->getTrainlinePassword(),
+            ];
+            $response = $client->post($this::API_URL.'/account/signin', [
+                'headers' => [
+                    'User-Agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.121 Safari/537.36',
+                    'x-user-agent' => 'CaptainTrain/1553708877(web) (Ember 3.4.6)',
+                    'origin' => 'chrome-extension://fhbjgbiflinjbdggehcddcbncdddomop',
+                    'accept' => 'application/json, text/javascript, */*; q=0.01',
+                    'content-type' => 'application/json'
+                ],
+                'json' => $payload
+            ]);
+
+            $trainlineUser = json_decode($response->getBody()->getContents(), true);
+            if (empty($trainlineUser["meta"]["token"])) {
+                $this->LogSystem("alert", '[CRON] :: Error during retrieval user data', $e->getMessage(), $this::API_URL.'/user', "");
+                return null;
+            }
+
+            $user->setToken($trainlineUser["meta"]["token"]);
+            $this->em->persist($user);
+            $this->em->flush();
         }
 
-        $trainlineUser = json_decode($response->getBody()->getContents(), true);
         if (!isset($trainlineUser['passengers'][0]['id']) || !isset($trainlineUser['passengers'][0]['card_ids'][0])) {
             $this->LogSystem("alert", '[CRON] :: Error during retrieval user data', "Le token n'est pas valide", $this::API_URL.'/user', "");
 
@@ -74,6 +100,7 @@ class TrainlineManager
             $order = new OrderTrip();
             $order->setUser($trip->getUser());
             $order->setPassengerUuid($passengerId);
+            $order->setError(false);
             $trip->setOrder($order);
             $this->em->persist($order);
             $this->em->persist($trip);
@@ -87,6 +114,8 @@ class TrainlineManager
             $this->em->persist($order);
             $this->em->persist($trip);
         }
+
+        $this->em->flush();
 
         $client = new GuzzleHttp\Client();
         $userData = $this->retreiveTrainlineIds($client, $trip->getUser());
@@ -199,6 +228,9 @@ class TrainlineManager
                     continue;
                 }
                 if (!($train['departure_date'] >= $trip->getFromDepartureDate()->format('Y-m-d\TH:i:sP') AND $train['departure_date'] <= $trip->getToDepartureDate()->format('Y-m-d\TH:i:sP'))) {
+                    continue;
+                }
+                if ($train['cents']) {
                     continue;
                 }
                 $trainCompatibleWithTheSearch[] = $train;

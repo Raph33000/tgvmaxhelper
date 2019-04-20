@@ -5,9 +5,8 @@ namespace TrainBundle\Form;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\BirthdayType;
-use Symfony\Component\Form\Extension\Core\Type\TextType;
+use Symfony\Component\Form\Extension\Core\Type\PasswordType;
 use Symfony\Component\Form\FormBuilderInterface;
-use TrainBundle\Entity\User;
 
 class RegistrationType extends AbstractType
 {
@@ -17,7 +16,7 @@ class RegistrationType extends AbstractType
             'choices'   => array('M.' => 'M.', 'Mme' => 'Mme')))
                 ->add('name')
                 ->add('surname')
-                ->add('token', TextType::class, ['label' => 'Token Trainline'])
+                ->add('trainline_password', PasswordType::class, ['label' => 'Mot de passe trainline'])
                 ->add('birthdate', BirthdayType::class, array(
                     'format' => 'dd/MM/yyyy',
                 ));
