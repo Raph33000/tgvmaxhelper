@@ -18,7 +18,7 @@
                 </h6>
                 <h6 class="card-subtitle mb-2 text-muted">
                     Status:
-                    {% set date30 = "now"|date_modify("+30 day") %}
+                    {% set date30 = "now"|date_modify("+35 day") %}
                     {% if trip.toDepartureDate.date > date30.date %}
                         <span class="badge badge-info">En attente: votre départ est supérieure à 30jours</span>
                     {% elseif trip.IsReserved and trip.order %}
