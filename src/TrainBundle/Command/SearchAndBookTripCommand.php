@@ -33,7 +33,7 @@ class SearchAndBookTripCommand  extends ContainerAwareCommand
         $date = new \DateTime('NOW');
         $trips = $em->createQuery('SELECT t FROM TrainBundle:Trip t WHERE t.fromDepartureDate > :date AND t.fromDepartureDate < :date30 AND t.isReserved = false ORDER BY t.fromDepartureDate')
             ->setParameter('date', $date->format(\DateTime::W3C))
-            ->setParameter('date30', $date->add(new \DateInterval('P30D'))->format(\DateTime::W3C))
+            ->setParameter('date30', $date->add(new \DateInterval('P31D'))->format(\DateTime::W3C))
             ->getResult();
 
         if($trips) {
